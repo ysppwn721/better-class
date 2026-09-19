@@ -36,6 +36,13 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      # 仓库里没有提交 gradle-wrapper.jar（二进制不入库），
+      # 所以这里显式装一个 Gradle，再提供可选的 wrapper 兼容路径。
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
       - name: Enable Gradle cache
         uses: actions/cache@v4
         with:
@@ -57,8 +64,11 @@ jobs:
       - name: 构建 APK
         working-directory: android
         run: |
-          chmod +x gradlew || true
-          if [ -f gradlew ]; then ./gradlew assembleDebug --no-daemon --stacktrace; else gradle assembleDebug --no-daemon --stacktrace; fi
+          if [ -x ./gradlew ]; then
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          else
+            gradle assembleDebug --no-daemon --stacktrace
+          fi
 
       - name: 重命名产物
         run: |
