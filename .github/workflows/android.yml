@@ -1,8 +1,11 @@
-/* ============================================================================
- * .github/workflows/android.yml
- *   · 每次 push / PR：构建 APK 并上传为 Artifact（可下载安装）
- *   · 打 v* 标签：构建 release APK 并自动创建 GitHub Release（附件可长期下载）
- * ==========================================================================*/
+# ============================================================================
+# .github/workflows/android.yml
+#   · 每次 push / PR：构建 APK 并上传为 Artifact（可下载安装）
+#   · 打 v* 标签：构建 release APK 并自动创建 GitHub Release（附件可长期下载）
+#
+# 注意：YAML 只认 # 注释。这里曾经误用了 /* */ 块注释，
+#       导致 GitHub 解析失败、运行记录里一个作业都没有 —— 别再犯。
+# ============================================================================
 name: Build APK
 
 on:
@@ -37,7 +40,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       # 仓库里没有提交 gradle-wrapper.jar（二进制不入库），
-      # 所以这里显式装一个 Gradle，再提供可选的 wrapper 兼容路径。
+      # 所以这里显式装一个 Gradle；如果将来补了 wrapper，脚本会自动优先用 wrapper。
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
