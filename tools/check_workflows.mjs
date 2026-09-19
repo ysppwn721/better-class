@@ -53,10 +53,12 @@ for (const f of files) {
     }
     if (/:\s*[|>][-+]?\s*$/.test(line)) { inBlock = true; blockIndent = indent; return; }
     // step 必须在 steps: 之后，且以 "- " 开头
-    if (/^\s+steps:\s*$/.test(line)) return;
+    if (/^\s*steps:\s*$/.test(line)) return;
     if (indent > 0 && /^[a-zA-Z_][\w.-]*:/.test(line.trim())) return;   // 普通键值行
     if (/^\s*-\s/.test(line)) return;                                    // 列表项
     if (/^\s*[a-zA-Z_][\w.-]*:\s*\S/.test(line)) return;                 // 缩进的 key: value
+    // 顶格、只有 key 冒号后面接嵌套块（on: / jobs: / permissions: …）也是合法的
+    if (/^[a-zA-Z_"'][\w."'-]*:\s*$/.test(line)) return;
     problems.push(`第 ${i + 1} 行结构可疑：${line.trim().slice(0, 70)}`);
   });
 
