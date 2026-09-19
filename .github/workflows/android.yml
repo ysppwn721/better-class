@@ -110,8 +110,16 @@ jobs:
 
       - name: 校验 APK 签名
         run: |
-          APKSIGNER=$(find "$ANDROID_SDK_ROOT/build-tools" -name 'apksigner*' | head -1)
+          set -e
+          # 先找不带扩展名的 Linux 启动脚本（SDK 里同时有 apksigner.bat，find 会先命中它）
+          APKSIGNER=$(find "$ANDROID_SDK_ROOT/build-tools" -type f -name 'apksigner' | head -1)
+          if [ -z "$APKSIGNER" ]; then
+            APKSIGNER=$(find "$ANDROID_SDK_ROOT/build-tools" -type f -name 'apksigner.bat' | head -1)
+          fi
+          echo "使用: $APKSIGNER"
+          chmod +x "$APKSIGNER" || true
           "$APKSIGNER" verify --print-certs out/kebiao-debug.apk
+          echo "✓ 签名校验通过"
 
       - name: 上传 Artifact
         uses: actions/upload-artifact@v4
