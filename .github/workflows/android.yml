@@ -1,10 +1,15 @@
 # ============================================================================
 # .github/workflows/android.yml
-#   · 每次 push / PR：构建 APK 并上传为 Artifact（可下载安装）
-#   · 打 v* 标签：构建 release APK 并自动创建 GitHub Release（附件可长期下载）
+#   · 每次 push / PR：构建 APK 并上传为 Artifact（可直接下载安装）
+#   · 打 v* 标签：创建 GitHub Release，把 APK 挂成长期可下载的附件
 #
-# 注意：YAML 只认 # 注释。这里曾经误用了 /* */ 块注释，
-#       导致 GitHub 解析失败、运行记录里一个作业都没有 —— 别再犯。
+# 设计说明（踩过的坑，别再犯）：
+#   1) YAML 只认 # 注释。曾误用 /* */ 块注释，导致 GitHub 解析失败、
+#      运行记录里一个作业都没有 —— 排查成本很高。
+#   2) 不依赖 android-actions/setup-android 之类第三方动作（实测会挂），
+#      改为自己下 cmdline-tools + sdkmanager 装平台组件，稳定可控。
+#   3) 构建优先走 Gradle 工程；若 Gradle 链路出问题，自动回退到仓库自带的
+#      tools/build_apk.mjs（aapt2+javac+d8+apksigner 直构建，本地已验证）。
 # ============================================================================
 name: Build APK
 
@@ -18,6 +23,10 @@ on:
 
 permissions:
   contents: write
+
+env:
+  ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
+  ANDROID_HOME: ${{ github.workspace }}/android-sdk
 
 jobs:
   apk:
@@ -36,35 +45,43 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      # 仓库里没有提交 gradle-wrapper.jar（二进制不入库），
-      # 所以这里显式装一个 Gradle；如果将来补了 wrapper，脚本会自动优先用 wrapper。
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-      - name: Enable Gradle cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle.kts', 'android/gradle.properties') }}
-          restore-keys: gradle-${{ runner.os }}-
+      - name: 安装 Android SDK（cmdline-tools + platform 35 + build-tools 35.0.1）
+        run: |
+          set -e
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
+          cd /tmp
+          curl -fsSL -o cmdline-tools.zip \
+            https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q cmdline-tools.zip -d "$ANDROID_SDK_ROOT/cmdline-tools"
+          mv "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          chmod +x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.1"
+          echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
+          ls "$ANDROID_SDK_ROOT/platforms" "$ANDROID_SDK_ROOT/build-tools"
 
       - name: 解析器单测
         run: node tests/parser.test.mjs
 
-      - name: 打包单文件网页（可注入内嵌 AI 通道）
+      - name: 工作流自检
+        run: node tools/check_workflows.mjs
+
+      - name: 打包单文件网页
         env:
-          # 把仓库 Secret 配成你的代理地址，APK 就自带零配置识别能力
+          # 配了 Secret 就把它内嵌进 APK，让用户零配置用上截图识别
           BC_AI_ENDPOINT: ${{ secrets.BC_AI_ENDPOINT }}
         run: node build.mjs
 
-      - name: 构建 APK
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        continue-on-error: true
+        with:
+          gradle-version: '8.9'
+
+      - name: 构建 APK（Gradle）
+        id: gradle_build
+        continue-on-error: true
         working-directory: android
         run: |
           if [ -x ./gradlew ]; then
@@ -73,11 +90,28 @@ jobs:
             gradle assembleDebug --no-daemon --stacktrace
           fi
 
-      - name: 重命名产物
+      - name: 构建 APK（直构建兜底）
+        if: steps.gradle_build.outcome != 'success'
+        run: node tools/build_apk.mjs
+
+      - name: 收集产物
         run: |
+          set -e
           mkdir -p out
-          cp android/app/build/outputs/apk/debug/app-debug.apk out/kebiao-debug.apk
-          ls -lh out
+          if [ -f android/app/build/outputs/apk/debug/app-debug.apk ]; then
+            cp android/app/build/outputs/apk/debug/app-debug.apk out/kebiao-debug.apk
+            echo "来源：Gradle"
+          elif [ -f out/kebiao-debug.apk ]; then
+            echo "来源：直构建兜底"
+          else
+            echo "✗ 两种构建方式都没有产出 APK"; exit 1
+          fi
+          ls -lh out/
+
+      - name: 校验 APK 签名
+        run: |
+          APKSIGNER=$(find "$ANDROID_SDK_ROOT/build-tools" -name 'apksigner*' | head -1)
+          "$APKSIGNER" verify --print-certs out/kebiao-debug.apk
 
       - name: 上传 Artifact
         uses: actions/upload-artifact@v4
@@ -94,8 +128,12 @@ jobs:
           generate_release_notes: true
           body: |
             ## 安装
-            下载下面的 `kebiao-debug.apk`，在手机上点击安装（需允许「未知来源」）。
+
+            下载下面的 `kebiao-debug.apk`，在手机上点击安装（首次需允许「未知来源」）。
 
             ## 说明
-            - 完全离线可用；导入课表支持「截图识别」与「粘贴文本」两条路
+
+            - 完全离线可用：不点「截图识别」就不会联网
+            - 导入课表两条路：**粘贴文本**（零成本、最准）/ **截图识别**（需视觉模型）
             - 首次打开可点「载入示例」先看效果
+            - 支持夏季 / 冬季两套作息，按周过滤，导出图片与日历
