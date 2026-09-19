@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 应用名用 Unicode 转义写，避免任何编码问题 -->
+    <string name="app_name">&#35838;&#34920;</string>
+</resources>

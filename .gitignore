@@ -1,0 +1,47 @@
+# ---- 构建产物（由 build.mjs / gradle 生成，不入库） ----
+/apk/www/*.html
+/dist/*.html
+/android/app/src/main/assets/*.html
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+/android/.idea/
+/android/gradlew.bat
+/android/gradlew
+/android/gradle/wrapper/*.jar
+*.apk
+*.apk.idsig
+*.aab
+*.keystore
+*.jks
+out/
+
+# ---- 依赖 / 临时 ----
+node_modules/
+.npm/
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# ---- 编辑器 ----
+.vscode/
+.idea/
+*.iml
+
+# ---- 本机环境 ----
+.dsh-vision-router/
+
+# ---- 密钥（绝对不要提交） ----
+.env
+.env.*
+!.env.example
+*.pem
+
+# ---- 个人隐私素材：课表截图含姓名/学号，不入库 ----
+/*.jpg
+/*.jpeg
+/*.png
+/*.webp
+!docs/**
